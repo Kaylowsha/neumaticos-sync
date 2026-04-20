@@ -79,80 +79,125 @@ function filterRows(rows: Row[], search: string, cols: string[]): Row[] {
   return rows.filter((r) => cols.some((c) => (r[c] ?? "").toLowerCase().includes(q)));
 }
 
-function MissingTable({ rows, mapping, search }: { rows: Row[]; mapping: ColumnMapping; search: string }) {
-  const cols = [mapping.sigaKey, mapping.sigaDesc, mapping.sigaPrice, mapping.sigaStock, mapping.sigaBrand].filter(Boolean) as string[];
-  const filtered = filterRows(rows, search, cols);
+function getAroInfo(rows: Row[]): { col: string; values: string[] } | null {
+  if (rows.length === 0) return null;
+  const col = Object.keys(rows[0]).find((k) => k.toLowerCase().includes("aro"));
+  if (!col) return null;
+  const values = [...new Set(rows.map((r) => (r[col] ?? "").toString().trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true })
+  );
+  return values.length > 0 ? { col, values } : null;
+}
 
-  if (filtered.length === 0)
-    return <Empty msg={rows.length === 0 ? "¡Perfecto! No falta ningún producto en la web." : "No hay resultados para la búsqueda."} good={rows.length === 0} />;
+function AroFilter({ aro, value, onChange }: { aro: { col: string; values: string[] }; value: string; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-white/50"
+    >
+      <option value="">Todos los aros</option>
+      {aro.values.map((v) => (
+        <option key={v} value={v}>Aro {v}</option>
+      ))}
+    </select>
+  );
+}
+
+function MissingTable({ rows, mapping, search }: { rows: Row[]; mapping: ColumnMapping; search: string }) {
+  const [aroFilter, setAroFilter] = useState("");
+  const cols = [mapping.sigaKey, mapping.sigaDesc, mapping.sigaPrice, mapping.sigaStock, mapping.sigaBrand].filter(Boolean) as string[];
+  const aro = getAroInfo(rows);
+  const byAro = aro && aroFilter ? rows.filter((r) => (r[aro.col] ?? "").toString().trim() === aroFilter) : rows;
+  const filtered = filterRows(byAro, search, cols);
 
   return (
-    <TableWrapper>
-      <thead>
-        <tr className="text-left text-xs text-white/40 border-b border-white/10">
-          <th className="pb-2 pr-3">Código</th>
-          {mapping.sigaDesc && <th className="pb-2 pr-3">Descripción</th>}
-          {mapping.sigaPrice && <th className="pb-2 pr-3">Precio SIGA</th>}
-          {mapping.sigaStock && <th className="pb-2 pr-3">Stock</th>}
-          {mapping.sigaBrand && <th className="pb-2">Marca</th>}
-        </tr>
-      </thead>
-      <tbody>
-        {filtered.map((r, i) => (
-          <tr key={i} className="border-b border-white/5 hover:bg-white/5 text-sm">
-            <td className="py-2 pr-3 font-mono text-red-300">{r[mapping.sigaKey]}</td>
-            {mapping.sigaDesc && <td className="py-2 pr-3 text-white/80">{r[mapping.sigaDesc]}</td>}
-            {mapping.sigaPrice && <td className="py-2 pr-3 text-white/60">{r[mapping.sigaPrice]}</td>}
-            {mapping.sigaStock && <td className="py-2 pr-3 text-white/60">{r[mapping.sigaStock]}</td>}
-            {mapping.sigaBrand && <td className="py-2 text-white/50">{r[mapping.sigaBrand!]}</td>}
-          </tr>
-        ))}
-      </tbody>
-    </TableWrapper>
+    <>
+      {aro && <AroFilter aro={aro} value={aroFilter} onChange={setAroFilter} />}
+      {filtered.length === 0 ? (
+        <Empty msg={rows.length === 0 ? "¡Perfecto! No falta ningún producto en la web." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
+      ) : (
+        <TableWrapper>
+          <thead>
+            <tr className="text-left text-xs text-white/40 border-b border-white/10">
+              <th className="pb-2 pr-3">Código</th>
+              {mapping.sigaDesc && <th className="pb-2 pr-3">Descripción</th>}
+              {mapping.sigaPrice && <th className="pb-2 pr-3">Precio SIGA</th>}
+              {mapping.sigaStock && <th className="pb-2 pr-3">Stock</th>}
+              {mapping.sigaBrand && <th className="pb-2">Marca</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r, i) => (
+              <tr key={i} className="border-b border-white/5 hover:bg-white/5 text-sm">
+                <td className="py-2 pr-3 font-mono text-red-300">{r[mapping.sigaKey]}</td>
+                {mapping.sigaDesc && <td className="py-2 pr-3 text-white/80">{r[mapping.sigaDesc]}</td>}
+                {mapping.sigaPrice && <td className="py-2 pr-3 text-white/60">{r[mapping.sigaPrice]}</td>}
+                {mapping.sigaStock && <td className="py-2 pr-3 text-white/60">{r[mapping.sigaStock]}</td>}
+                {mapping.sigaBrand && <td className="py-2 text-white/50">{r[mapping.sigaBrand!]}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </TableWrapper>
+      )}
+    </>
   );
 }
 
 function ExtraTable({ rows, mapping, search }: { rows: Row[]; mapping: ColumnMapping; search: string }) {
+  const [aroFilter, setAroFilter] = useState("");
   const cols = [mapping.webKey, mapping.webDesc, mapping.webPrice, mapping.webStock].filter(Boolean) as string[];
-  const filtered = filterRows(rows, search, cols);
-
-  if (filtered.length === 0)
-    return <Empty msg={rows.length === 0 ? "¡Perfecto! No sobra ningún producto en la web." : "No hay resultados para la búsqueda."} good={rows.length === 0} />;
+  const aro = getAroInfo(rows);
+  const byAro = aro && aroFilter ? rows.filter((r) => (r[aro.col] ?? "").toString().trim() === aroFilter) : rows;
+  const filtered = filterRows(byAro, search, cols);
 
   return (
-    <TableWrapper>
-      <thead>
-        <tr className="text-left text-xs text-white/40 border-b border-white/10">
-          <th className="pb-2 pr-3">SKU Web</th>
-          {mapping.webDesc && <th className="pb-2 pr-3">Nombre</th>}
-          {mapping.webPrice && <th className="pb-2 pr-3">Precio Web</th>}
-          {mapping.webStock && <th className="pb-2">Stock Web</th>}
-        </tr>
-      </thead>
-      <tbody>
-        {filtered.map((r, i) => (
-          <tr key={i} className="border-b border-white/5 hover:bg-white/5 text-sm">
-            <td className="py-2 pr-3 font-mono text-yellow-300">{r[mapping.webKey]}</td>
-            {mapping.webDesc && <td className="py-2 pr-3 text-white/80">{r[mapping.webDesc]}</td>}
-            {mapping.webPrice && <td className="py-2 pr-3 text-white/60">{r[mapping.webPrice]}</td>}
-            {mapping.webStock && <td className="py-2 text-white/60">{r[mapping.webStock]}</td>}
-          </tr>
-        ))}
-      </tbody>
-    </TableWrapper>
+    <>
+      {aro && <AroFilter aro={aro} value={aroFilter} onChange={setAroFilter} />}
+      {filtered.length === 0 ? (
+        <Empty msg={rows.length === 0 ? "¡Perfecto! No sobra ningún producto en la web." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
+      ) : (
+        <TableWrapper>
+          <thead>
+            <tr className="text-left text-xs text-white/40 border-b border-white/10">
+              <th className="pb-2 pr-3">SKU Web</th>
+              {mapping.webDesc && <th className="pb-2 pr-3">Nombre</th>}
+              {mapping.webPrice && <th className="pb-2 pr-3">Precio Web</th>}
+              {mapping.webStock && <th className="pb-2">Stock Web</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r, i) => (
+              <tr key={i} className="border-b border-white/5 hover:bg-white/5 text-sm">
+                <td className="py-2 pr-3 font-mono text-yellow-300">{r[mapping.webKey]}</td>
+                {mapping.webDesc && <td className="py-2 pr-3 text-white/80">{r[mapping.webDesc]}</td>}
+                {mapping.webPrice && <td className="py-2 pr-3 text-white/60">{r[mapping.webPrice]}</td>}
+                {mapping.webStock && <td className="py-2 text-white/60">{r[mapping.webStock]}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </TableWrapper>
+      )}
+    </>
   );
 }
 
 function DiffsTable({ rows, mapping, search }: { rows: DiffRow[]; mapping: ColumnMapping; search: string }) {
+  const [aroFilter, setAroFilter] = useState("");
+  const sigaRows = rows.map((r) => r.sigaRow);
+  const aro = getAroInfo(sigaRows);
+  const byAro = aro && aroFilter ? rows.filter((r) => (r.sigaRow[aro.col] ?? "").toString().trim() === aroFilter) : rows;
   const filtered = search
-    ? rows.filter((r) => r.key.toLowerCase().includes(search.toLowerCase()) ||
+    ? byAro.filter((r) => r.key.toLowerCase().includes(search.toLowerCase()) ||
         (mapping.sigaDesc && (r.sigaRow[mapping.sigaDesc] ?? "").toLowerCase().includes(search.toLowerCase())))
-    : rows;
-
-  if (filtered.length === 0)
-    return <Empty msg={rows.length === 0 ? "¡Perfecto! No hay diferencias de precio ni stock." : "No hay resultados para la búsqueda."} good={rows.length === 0} />;
+    : byAro;
 
   return (
+    <>
+      {aro && <AroFilter aro={aro} value={aroFilter} onChange={setAroFilter} />}
+      {filtered.length === 0 ? (
+        <Empty msg={rows.length === 0 ? "¡Perfecto! No hay diferencias de precio ni stock." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
+      ) : (
     <TableWrapper>
       <thead>
         <tr className="text-left text-xs text-white/40 border-b border-white/10">
@@ -185,6 +230,8 @@ function DiffsTable({ rows, mapping, search }: { rows: DiffRow[]; mapping: Colum
         )}
       </tbody>
     </TableWrapper>
+      )}
+    </>
   );
 }
 
