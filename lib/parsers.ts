@@ -18,6 +18,7 @@ function parseCsv(file: File): Promise<ParsedFile> {
       header: true,
       skipEmptyLines: true,
       encoding: "UTF-8",
+      transformHeader: (h) => h.replace(/^\uFEFF/, ""),
       complete(results) {
         const headers = results.meta.fields ?? [];
         resolve({ rows: results.data, headers, fileName: file.name });
