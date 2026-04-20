@@ -16,7 +16,7 @@ export default function StepMap({ siga, web, onDone, onBack }: Props) {
     sigaKey: guessKeyColumn(siga.headers, true),
     webKey: guessKeyColumn(web.headers, false),
     sigaDesc: guessColumn(siga.headers, ["Descripción", "Descripcion", "Nombre", "Name"]),
-    webDesc: guessColumn(web.headers, ["Name", "Nombre", "Descripción", "post_title"]),
+    webDesc: guessColumn(web.headers, ["post_title", "Name", "Nombre", "Descripción"]),
     sigaPrice: guessColumn(siga.headers, ["Precio Lista (c/IVA)", "Precio", "Price"]),
     webPrice: guessColumn(web.headers, ["regular_price", "Regular price", "Price", "Precio"]),
     sigaStock: guessColumn(siga.headers, ["Stock Total", "Stock", "Cantidad"]),

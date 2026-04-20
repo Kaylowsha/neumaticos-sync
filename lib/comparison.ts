@@ -62,6 +62,7 @@ function buildDiffs(
   const diffs: DiffRow["differences"] = [];
 
   const pairs: { field: string; sigaCol?: string; webCol?: string; price?: boolean }[] = [
+    { field: "Nombre", sigaCol: mapping.sigaDesc, webCol: mapping.webDesc },
     { field: "Precio", sigaCol: mapping.sigaPrice, webCol: mapping.webPrice, price: true },
     { field: "Stock", sigaCol: mapping.sigaStock, webCol: mapping.webStock },
   ];

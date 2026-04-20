@@ -49,5 +49,9 @@ export function guessKeyColumn(headers: string[], isSiga: boolean): string {
 }
 
 export function guessColumn(headers: string[], candidates: string[]): string {
-  return candidates.find((c) => headers.some((h) => h.toLowerCase().includes(c.toLowerCase()))) ?? "";
+  for (const c of candidates) {
+    const match = headers.find((h) => h.toLowerCase().includes(c.toLowerCase()));
+    if (match) return match;
+  }
+  return "";
 }
