@@ -192,44 +192,52 @@ function DiffsTable({ rows, mapping, search }: { rows: DiffRow[]; mapping: Colum
         (mapping.sigaDesc && (r.sigaRow[mapping.sigaDesc] ?? "").toLowerCase().includes(search.toLowerCase())))
     : byAro;
 
+  const fields: { label: string; sigaCol?: string; webCol?: string }[] = [
+    { label: "Nombre", sigaCol: mapping.sigaDesc, webCol: mapping.webDesc },
+    { label: "Precio", sigaCol: mapping.sigaPrice, webCol: mapping.webPrice },
+    { label: "Stock", sigaCol: mapping.sigaStock, webCol: mapping.webStock },
+  ].filter((f) => f.sigaCol && f.webCol);
+
   return (
     <>
       {aro && <AroFilter aro={aro} value={aroFilter} onChange={setAroFilter} />}
       {filtered.length === 0 ? (
-        <Empty msg={rows.length === 0 ? "¡Perfecto! No hay diferencias de precio ni stock." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
+        <Empty msg={rows.length === 0 ? "¡Perfecto! No hay diferencias." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
       ) : (
-    <TableWrapper>
-      <thead>
-        <tr className="text-left text-xs text-white/40 border-b border-white/10">
-          <th className="pb-2 pr-3">Código</th>
-          {mapping.sigaDesc && <th className="pb-2 pr-3">Descripción</th>}
-          <th className="pb-2 pr-3">Campo</th>
-          <th className="pb-2 pr-3">Valor SIGA</th>
-          <th className="pb-2">Valor Web</th>
-        </tr>
-      </thead>
-      <tbody>
-        {filtered.flatMap((r) =>
-          r.differences.map((d, j) => (
-            <tr key={`${r.key}-${j}`} className="border-b border-white/5 hover:bg-white/5 text-sm">
-              {j === 0 ? (
+        <TableWrapper>
+          <thead>
+            <tr className="text-left text-xs text-white/40 border-b border-white/10">
+              <th className="pb-2 pr-3 whitespace-nowrap">Código</th>
+              {fields.map((f) => (
                 <>
-                  <td className="py-2 pr-3 font-mono text-blue-300" rowSpan={r.differences.length}>{r.key}</td>
-                  {mapping.sigaDesc && (
-                    <td className="py-2 pr-3 text-white/70" rowSpan={r.differences.length}>
-                      {r.sigaRow[mapping.sigaDesc]}
-                    </td>
-                  )}
+                  <th key={`siga-${f.label}`} className="pb-2 pr-3 whitespace-nowrap">{f.label} SIGA</th>
+                  <th key={`web-${f.label}`} className="pb-2 pr-3 whitespace-nowrap">{f.label} Web</th>
                 </>
-              ) : null}
-              <td className="py-2 pr-3 text-white/50">{d.field}</td>
-              <td className="py-2 pr-3 text-white">{d.sigaValue}</td>
-              <td className="py-2 text-white/60">{d.webValue}</td>
+              ))}
             </tr>
-          ))
-        )}
-      </tbody>
-    </TableWrapper>
+          </thead>
+          <tbody>
+            {filtered.map((r) => {
+              const diffFields = new Set(r.differences.map((d) => d.field));
+              return (
+                <tr key={r.key} className="border-b border-white/5 hover:bg-white/5 text-sm">
+                  <td className="py-2 pr-3 font-mono text-blue-300 whitespace-nowrap">{r.key}</td>
+                  {fields.map((f) => {
+                    const differs = diffFields.has(f.label);
+                    const sv = f.sigaCol ? (r.sigaRow[f.sigaCol] ?? "") : "";
+                    const wv = f.webCol ? (r.webRow[f.webCol] ?? "") : "";
+                    return (
+                      <>
+                        <td key={`siga-${f.label}`} className={`py-2 pr-3 ${differs ? "text-orange-300 font-medium" : "text-white/60"}`}>{sv}</td>
+                        <td key={`web-${f.label}`} className={`py-2 pr-3 ${differs ? "text-orange-300/70 font-medium" : "text-white/40"}`}>{wv}</td>
+                      </>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </TableWrapper>
       )}
     </>
   );
