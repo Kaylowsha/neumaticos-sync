@@ -16,6 +16,7 @@ export interface ColumnMapping {
   sigaStock?: string;
   webStock?: string;
   sigaBrand?: string;
+  webSalePrice?: string;
 }
 
 export interface ComparisonResult {

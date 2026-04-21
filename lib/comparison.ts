@@ -70,8 +70,12 @@ function buildDiffs(
 
   for (const { field, sigaCol, webCol, price } of pairs) {
     if (!sigaCol || !webCol) continue;
-    const sv = sigaCol ? sigaRow[sigaCol] ?? "" : "";
-    const wv = webCol ? webRow[webCol] ?? "" : "";
+    const sv = sigaRow[sigaCol] ?? "";
+    // Para precio web: usar sale_price si está disponible, sino regular_price
+    const rawWv = webRow[webCol] ?? "";
+    const wv = price && mapping.webSalePrice
+      ? (webRow[mapping.webSalePrice] ?? "").trim() || rawWv
+      : rawWv;
     const sigaNorm = price ? normalizePrice(sv) : normalize(sv);
     const webNorm = price ? normalizePrice(wv) : normalize(wv);
     if (sigaNorm !== webNorm && (sigaNorm !== "" || webNorm !== "")) {

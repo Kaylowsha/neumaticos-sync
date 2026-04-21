@@ -205,7 +205,10 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                   {fields.map((f) => {
                     const differs = row.type === "matched" && (row as Extract<UnifiedRow, { type: "matched" }>).diffFields.has(f.label);
                     const sv = row.type !== "extra" && f.sigaCol ? ((row as any).sigaRow[f.sigaCol] ?? "") : "";
-                    const wv = row.type !== "missing" && f.webCol ? ((row as any).webRow[f.webCol] ?? "") : "";
+                    const rawWv = row.type !== "missing" && f.webCol ? ((row as any).webRow[f.webCol] ?? "") : "";
+                    const wv = f.label === "Precio" && mapping.webSalePrice && row.type !== "missing"
+                      ? (((row as any).webRow?.[mapping.webSalePrice] ?? "").trim() || rawWv)
+                      : rawWv;
                     return (
                       <>
                         <td key={`si-${f.label}`} className={`py-2 px-3 ${differs ? "text-orange-300 font-medium" : row.type === "extra" ? "text-white/20" : "text-white/70"}`}>
