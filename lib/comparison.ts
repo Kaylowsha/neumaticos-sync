@@ -4,6 +4,10 @@ function normalize(val: string): string {
   return (val ?? "").toString().trim().toLowerCase();
 }
 
+function normalizeWords(val: string): string {
+  return normalize(val).split(/\s+/).sort().join(" ");
+}
+
 function normalizePrice(val: string): string {
   // Elimina símbolos de moneda, puntos de miles y normaliza la coma decimal
   return (val ?? "").replace(/[$\s.]/g, "").replace(",", ".").trim();
@@ -62,22 +66,21 @@ function buildDiffs(
 ): DiffRow["differences"] {
   const diffs: DiffRow["differences"] = [];
 
-  const pairs: { field: string; sigaCol?: string; webCol?: string; price?: boolean }[] = [
-    { field: "Nombre", sigaCol: mapping.sigaDesc, webCol: mapping.webDesc },
+  const pairs: { field: string; sigaCol?: string; webCol?: string; price?: boolean; words?: boolean }[] = [
+    { field: "Nombre", sigaCol: mapping.sigaDesc, webCol: mapping.webDesc, words: true },
     { field: "Precio", sigaCol: mapping.sigaPrice, webCol: mapping.webPrice, price: true },
     { field: "Stock", sigaCol: mapping.sigaStock, webCol: mapping.webStock },
   ];
 
-  for (const { field, sigaCol, webCol, price } of pairs) {
+  for (const { field, sigaCol, webCol, price, words } of pairs) {
     if (!sigaCol || !webCol) continue;
     const sv = sigaRow[sigaCol] ?? "";
-    // Para precio web: usar sale_price si está disponible, sino regular_price
     const rawWv = webRow[webCol] ?? "";
     const wv = price && mapping.webSalePrice
       ? (webRow[mapping.webSalePrice] ?? "").trim() || rawWv
       : rawWv;
-    const sigaNorm = price ? normalizePrice(sv) : normalize(sv);
-    const webNorm = price ? normalizePrice(wv) : normalize(wv);
+    const sigaNorm = price ? normalizePrice(sv) : words ? normalizeWords(sv) : normalize(sv);
+    const webNorm = price ? normalizePrice(wv) : words ? normalizeWords(wv) : normalize(wv);
     if (sigaNorm !== webNorm && (sigaNorm !== "" || webNorm !== "")) {
       diffs.push({ field, sigaValue: sv, webValue: wv });
     }
