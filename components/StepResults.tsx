@@ -173,7 +173,7 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
 
       {/* Table */}
       <div className="text-xs text-white/40 px-1">{filtered.length} productos</div>
-      <div className="overflow-auto max-h-[55vh] bg-white/5 border border-white/10 rounded-xl">
+      <div className="overflow-auto max-h-[calc(100vh-420px)] min-h-[300px] bg-white/5 border border-white/10 rounded-xl">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-[#0d1117] z-10">
             <tr className="text-left text-xs text-white/40 border-b border-white/10">

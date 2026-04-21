@@ -43,9 +43,12 @@ export default function Home() {
     { id: "results", label: "3. Resultados" },
   ];
 
+  const isResults = step === "results";
+
   return (
-    <main className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <main className="min-h-screen bg-gray-950 text-white flex flex-col">
+      {/* Header — siempre centrado */}
+      <div className="max-w-4xl mx-auto w-full px-4 pt-6 space-y-4">
         <div className="text-center space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">Sincronización de Inventario</h1>
           <p className="text-white/40 text-sm">Compará el inventario de SIGA con los productos de la web</p>
@@ -67,8 +70,11 @@ export default function Home() {
             </div>
           ))}
         </div>
+      </div>
 
-        <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
+      {/* Content — ancho completo en resultados, centrado en los otros pasos */}
+      <div className={`flex-1 px-4 py-4 pb-8 ${isResults ? "w-full" : "max-w-4xl mx-auto w-full"}`}>
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 md:p-6">
           {step === "upload" && <StepUpload onDone={handleUploadDone} />}
           {step === "map" && siga && web && (
             <StepMap siga={siga} web={web} onDone={handleMapDone} onBack={() => setStep("upload")} />
@@ -77,11 +83,11 @@ export default function Home() {
             <StepResults result={result} mapping={mapping} onBack={() => setStep("map")} onReset={reset} />
           )}
         </div>
-
-        <p className="text-center text-xs text-white/20">
-          Todo se procesa localmente en tu navegador — ningún archivo se sube a internet.
-        </p>
       </div>
+
+      <p className="text-center text-xs text-white/20 pb-4">
+        Todo se procesa localmente en tu navegador — ningún archivo se sube a internet.
+      </p>
     </main>
   );
 }
