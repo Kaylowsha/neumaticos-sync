@@ -19,9 +19,10 @@ export interface ColumnMapping {
 }
 
 export interface ComparisonResult {
-  missingOnWeb: Row[];      // En SIGA pero no en la web
-  extraOnWeb: Row[];        // En la web pero no en SIGA
-  withDifferences: DiffRow[]; // En ambos pero con diferencias
+  missingOnWeb: Row[];
+  extraOnWeb: Row[];
+  withDifferences: DiffRow[];
+  allMatched: DiffRow[];
 }
 
 export interface DiffRow {

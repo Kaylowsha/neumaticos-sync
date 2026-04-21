@@ -30,6 +30,7 @@ export function compare(
 
   const missingOnWeb: Row[] = [];
   const withDifferences: DiffRow[] = [];
+  const allMatched: DiffRow[] = [];
 
   for (const [key, sigaRow] of sigaMap) {
     if (!webMap.has(key)) {
@@ -37,9 +38,9 @@ export function compare(
     } else {
       const webRow = webMap.get(key)!;
       const diffs = buildDiffs(key, sigaRow, webRow, mapping);
-      if (diffs.length > 0) {
-        withDifferences.push({ key, sigaRow, webRow, differences: diffs });
-      }
+      const diffRow: DiffRow = { key, sigaRow, webRow, differences: diffs };
+      allMatched.push(diffRow);
+      if (diffs.length > 0) withDifferences.push(diffRow);
     }
   }
 
@@ -50,7 +51,7 @@ export function compare(
     }
   }
 
-  return { missingOnWeb, extraOnWeb, withDifferences };
+  return { missingOnWeb, extraOnWeb, withDifferences, allMatched };
 }
 
 function buildDiffs(

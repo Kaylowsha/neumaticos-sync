@@ -48,6 +48,17 @@ export function guessKeyColumn(headers: string[], isSiga: boolean): string {
   return candidates.find((c) => headers.includes(c)) ?? headers[0] ?? "";
 }
 
+export function parseTireSize(name: string): { ancho?: string; perfil?: string; aro?: string } {
+  const s = (name ?? "").toString();
+  // "265/65/R17", "265/65R17", "265/65/17"
+  const m1 = s.match(/(\d{3})\/(\d{2,3})\/?\s*R?(\d{2})\b/i);
+  if (m1) return { ancho: m1[1], perfil: m1[2], aro: m1[3] };
+  // "155 R13C", "155R13"
+  const m2 = s.match(/(\d{3})\s*R(\d{2})\b/i);
+  if (m2) return { ancho: m2[1], aro: m2[2] };
+  return {};
+}
+
 export function guessColumn(headers: string[], candidates: string[]): string {
   for (const c of candidates) {
     const match = headers.find((h) => h.toLowerCase().includes(c.toLowerCase()));

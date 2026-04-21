@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import type { ColumnMapping, ComparisonResult, DiffRow, Row } from "@/lib/types";
+import { useMemo, useState } from "react";
+import type { ColumnMapping, ComparisonResult, Row } from "@/lib/types";
 import { exportToXlsx } from "@/lib/comparison";
+import { parseTireSize } from "@/lib/parsers";
 
 interface Props {
   result: ComparisonResult;
@@ -11,55 +12,217 @@ interface Props {
   onReset: () => void;
 }
 
-type Tab = "missing" | "extra" | "diffs";
+type UnifiedRow =
+  | { type: "missing"; key: string; sigaRow: Row }
+  | { type: "extra"; key: string; webRow: Row }
+  | { type: "matched"; key: string; sigaRow: Row; webRow: Row; diffFields: Set<string> };
+
+function getRowName(row: UnifiedRow, mapping: ColumnMapping): string {
+  if (row.type === "extra") return mapping.webDesc ? (row.webRow[mapping.webDesc] ?? "") : "";
+  return mapping.sigaDesc ? (row.sigaRow[mapping.sigaDesc] ?? "") : "";
+}
+
+function buildUnified(result: ComparisonResult): UnifiedRow[] {
+  const rows: UnifiedRow[] = [];
+  for (const r of result.missingOnWeb) {
+    rows.push({ type: "missing", key: r[Object.keys(r)[0]] ?? "", sigaRow: r });
+  }
+  for (const r of result.extraOnWeb) {
+    rows.push({ type: "extra", key: r[Object.keys(r)[0]] ?? "", webRow: r });
+  }
+  for (const r of result.allMatched) {
+    rows.push({ type: "matched", key: r.key, sigaRow: r.sigaRow, webRow: r.webRow, diffFields: new Set(r.differences.map((d) => d.field)) });
+  }
+  return rows;
+}
+
+function uniqueSorted(vals: (string | undefined)[]): string[] {
+  return [...new Set(vals.filter(Boolean) as string[])].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true })
+  );
+}
+
+function ChipGroup({ label, options, selected, onToggle }: { label: string; options: string[]; selected: Set<string>; onToggle: (v: string) => void }) {
+  if (options.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span className="text-xs text-white/40 shrink-0">{label}</span>
+      {options.map((v) => (
+        <button
+          key={v}
+          onClick={() => onToggle(v)}
+          className={`px-2 py-0.5 rounded-full text-xs font-medium border transition ${
+            selected.has(v)
+              ? "bg-blue-600 border-blue-500 text-white"
+              : "bg-white/5 border-white/20 text-white/60 hover:bg-white/10"
+          }`}
+        >
+          {v}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const STATUS: Record<UnifiedRow["type"] | "diff", { label: string; cls: string }> = {
+  missing: { label: "FALTA",  cls: "bg-red-900/40 text-red-300 border-red-500/30" },
+  extra:   { label: "SOBRA",  cls: "bg-yellow-900/40 text-yellow-300 border-yellow-500/30" },
+  matched: { label: "OK",     cls: "bg-green-900/30 text-green-400 border-green-500/30" },
+  diff:    { label: "DIFS",   cls: "bg-orange-900/40 text-orange-300 border-orange-500/30" },
+};
 
 export default function StepResults({ result, mapping, onBack, onReset }: Props) {
-  const [tab, setTab] = useState<Tab>("missing");
-  const [search, setSearch] = useState("");
+  const [skuFilter, setSkuFilter] = useState("");
+  const [medidaFilter, setMedidaFilter] = useState("");
+  const [aroSel, setAroSel] = useState<Set<string>>(new Set());
+  const [perfilSel, setPerfilSel] = useState<Set<string>>(new Set());
+  const [anchoSel, setAnchoSel] = useState<Set<string>>(new Set());
 
-  const tabs: { id: Tab; label: string; count: number; color: string }[] = [
-    { id: "missing", label: "Faltan en la web", count: result.missingOnWeb.length, color: "text-red-400" },
-    { id: "extra", label: "Sobran en la web", count: result.extraOnWeb.length, color: "text-yellow-400" },
-    { id: "diffs", label: "Diferencias de precio/stock", count: result.withDifferences.length, color: "text-blue-400" },
+  const allRows = useMemo(() => buildUnified(result), [result]);
+
+  const dimOptions = useMemo(() => {
+    const aros: string[] = [], perfiles: string[] = [], anchos: string[] = [];
+    for (const row of allRows) {
+      const name = getRowName(row, mapping);
+      const { aro, perfil, ancho } = parseTireSize(name);
+      if (aro) aros.push(aro);
+      if (perfil) perfiles.push(perfil);
+      if (ancho) anchos.push(ancho);
+    }
+    return { aros: uniqueSorted(aros), perfiles: uniqueSorted(perfiles), anchos: uniqueSorted(anchos) };
+  }, [allRows, mapping]);
+
+  const toggle = (sel: Set<string>, setSel: (s: Set<string>) => void, val: string) => {
+    const next = new Set(sel);
+    next.has(val) ? next.delete(val) : next.add(val);
+    setSel(next);
+  };
+
+  const filtered = useMemo(() => {
+    return allRows.filter((row) => {
+      const key = row.key.toLowerCase();
+      if (skuFilter && !key.includes(skuFilter.toLowerCase())) return false;
+
+      const name = getRowName(row, mapping).toLowerCase();
+      if (medidaFilter && !name.includes(medidaFilter.toLowerCase())) return false;
+
+      if (aroSel.size > 0 || perfilSel.size > 0 || anchoSel.size > 0) {
+        const { aro, perfil, ancho } = parseTireSize(getRowName(row, mapping));
+        if (aroSel.size > 0 && (!aro || !aroSel.has(aro))) return false;
+        if (perfilSel.size > 0 && (!perfil || !perfilSel.has(perfil))) return false;
+        if (anchoSel.size > 0 && (!ancho || !anchoSel.has(ancho))) return false;
+      }
+
+      return true;
+    });
+  }, [allRows, skuFilter, medidaFilter, aroSel, perfilSel, anchoSel, mapping]);
+
+  const fields: { label: string; sigaCol?: string; webCol?: string }[] = [
+    { label: "Nombre", sigaCol: mapping.sigaDesc, webCol: mapping.webDesc },
+    { label: "Precio", sigaCol: mapping.sigaPrice, webCol: mapping.webPrice },
+    { label: "Stock",  sigaCol: mapping.sigaStock, webCol: mapping.webStock },
+  ].filter((f) => f.sigaCol || f.webCol);
+
+  const summaryCards = [
+    { label: "Faltan en web",   count: result.missingOnWeb.length,   color: "text-red-400" },
+    { label: "Sobran en web",   count: result.extraOnWeb.length,     color: "text-yellow-400" },
+    { label: "Con diferencias", count: result.withDifferences.length, color: "text-orange-400" },
+    { label: "Coinciden",       count: result.allMatched.length - result.withDifferences.length, color: "text-green-400" },
   ];
 
   return (
     <div className="space-y-4">
-      {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => { setTab(t.id); setSearch(""); }}
-            className={`rounded-xl p-3 text-center border transition ${tab === t.id ? "bg-white/10 border-white/30" : "bg-white/5 border-white/10 hover:bg-white/8"}`}
-          >
-            <p className={`text-2xl font-bold ${t.color}`}>{t.count}</p>
-            <p className="text-xs text-white/50 mt-1">{t.label}</p>
-          </button>
+      {/* Summary */}
+      <div className="grid grid-cols-4 gap-2">
+        {summaryCards.map((c) => (
+          <div key={c.label} className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
+            <p className={`text-2xl font-bold ${c.color}`}>{c.count}</p>
+            <p className="text-xs text-white/40 mt-1">{c.label}</p>
+          </div>
         ))}
       </div>
 
-      {/* Search + Export */}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="Buscar..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/50"
-        />
-        <button
-          onClick={() => exportToXlsx(result, mapping)}
-          className="px-4 py-2 rounded-lg bg-green-700 hover:bg-green-600 text-white text-sm font-semibold transition"
-        >
-          📥 Exportar .xlsx
-        </button>
+      {/* Filters */}
+      <div className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Buscar SKU..."
+            value={skuFilter}
+            onChange={(e) => setSkuFilter(e.target.value)}
+            className="w-36 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/50"
+          />
+          <input
+            type="text"
+            placeholder="Buscar medida..."
+            value={medidaFilter}
+            onChange={(e) => setMedidaFilter(e.target.value)}
+            className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/50"
+          />
+          <button
+            onClick={() => exportToXlsx(result, mapping)}
+            className="px-4 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-white text-sm font-semibold transition whitespace-nowrap"
+          >
+            📥 Exportar .xlsx
+          </button>
+        </div>
+        <ChipGroup label="Aro"    options={dimOptions.aros}    selected={aroSel}    onToggle={(v) => toggle(aroSel, setAroSel, v)} />
+        <ChipGroup label="Perfil" options={dimOptions.perfiles} selected={perfilSel} onToggle={(v) => toggle(perfilSel, setPerfilSel, v)} />
+        <ChipGroup label="Ancho"  options={dimOptions.anchos}   selected={anchoSel}  onToggle={(v) => toggle(anchoSel, setAnchoSel, v)} />
       </div>
 
       {/* Table */}
-      {tab === "missing" && <MissingTable rows={result.missingOnWeb} mapping={mapping} search={search} />}
-      {tab === "extra" && <ExtraTable rows={result.extraOnWeb} mapping={mapping} search={search} />}
-      {tab === "diffs" && <DiffsTable rows={result.withDifferences} mapping={mapping} search={search} />}
+      <div className="text-xs text-white/40 px-1">{filtered.length} productos</div>
+      <div className="overflow-auto max-h-[55vh] bg-white/5 border border-white/10 rounded-xl">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-[#0d1117] z-10">
+            <tr className="text-left text-xs text-white/40 border-b border-white/10">
+              <th className="py-2 px-3 whitespace-nowrap">SKU</th>
+              <th className="py-2 px-2 whitespace-nowrap">Estado</th>
+              {fields.map((f) => (
+                <>
+                  <th key={`si-${f.label}`} className="py-2 px-3 whitespace-nowrap text-blue-400/70">{f.label} Inv.</th>
+                  <th key={`wb-${f.label}`} className="py-2 px-3 whitespace-nowrap text-green-400/70">{f.label} Web</th>
+                </>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={2 + fields.length * 2} className="py-8 text-center text-white/30">Sin resultados</td></tr>
+            ) : filtered.map((row, i) => {
+              const isDiff = row.type === "matched" && (row as Extract<UnifiedRow, { type: "matched" }>).diffFields.size > 0;
+              const statusKey = row.type === "matched" && isDiff ? "diff" : row.type;
+              const { label: stLabel, cls: stCls } = STATUS[statusKey];
+              const skuColor = row.type === "missing" ? "text-red-300" : row.type === "extra" ? "text-yellow-300" : "text-white/80";
+
+              return (
+                <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+                  <td className={`py-2 px-3 font-mono whitespace-nowrap ${skuColor}`}>{row.key}</td>
+                  <td className="py-2 px-2">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${stCls}`}>{stLabel}</span>
+                  </td>
+                  {fields.map((f) => {
+                    const differs = row.type === "matched" && (row as Extract<UnifiedRow, { type: "matched" }>).diffFields.has(f.label);
+                    const sv = row.type !== "extra" && f.sigaCol ? ((row as any).sigaRow[f.sigaCol] ?? "") : "";
+                    const wv = row.type !== "missing" && f.webCol ? ((row as any).webRow[f.webCol] ?? "") : "";
+                    return (
+                      <>
+                        <td key={`si-${f.label}`} className={`py-2 px-3 ${differs ? "text-orange-300 font-medium" : row.type === "extra" ? "text-white/20" : "text-white/70"}`}>
+                          {sv || (row.type === "extra" ? "—" : "")}
+                        </td>
+                        <td key={`wb-${f.label}`} className={`py-2 px-3 ${differs ? "text-orange-300/80 font-medium" : row.type === "missing" ? "text-white/20" : "text-white/50"}`}>
+                          {wv || (row.type === "missing" ? "—" : "")}
+                        </td>
+                      </>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <div className="flex gap-3 pt-2">
         <button onClick={onBack} className="px-6 py-2 rounded-xl text-white/60 bg-white/10 hover:bg-white/20 text-sm transition">
@@ -69,192 +232,6 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
           🔄 Nueva comparación
         </button>
       </div>
-    </div>
-  );
-}
-
-function filterRows(rows: Row[], search: string, cols: string[]): Row[] {
-  if (!search) return rows;
-  const q = search.toLowerCase();
-  return rows.filter((r) => cols.some((c) => (r[c] ?? "").toLowerCase().includes(q)));
-}
-
-function getAroInfo(rows: Row[]): { col: string; values: string[] } | null {
-  if (rows.length === 0) return null;
-  const col = Object.keys(rows[0]).find((k) => k.toLowerCase().includes("aro"));
-  if (!col) return null;
-  const values = [...new Set(rows.map((r) => (r[col] ?? "").toString().trim()).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b, undefined, { numeric: true })
-  );
-  return values.length > 0 ? { col, values } : null;
-}
-
-function AroFilter({ aro, value, onChange }: { aro: { col: string; values: string[] }; value: string; onChange: (v: string) => void }) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="bg-white/10 border border-white/20 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-white/50"
-    >
-      <option value="">Todos los aros</option>
-      {aro.values.map((v) => (
-        <option key={v} value={v}>Aro {v}</option>
-      ))}
-    </select>
-  );
-}
-
-function MissingTable({ rows, mapping, search }: { rows: Row[]; mapping: ColumnMapping; search: string }) {
-  const [aroFilter, setAroFilter] = useState("");
-  const cols = [mapping.sigaKey, mapping.sigaDesc, mapping.sigaPrice, mapping.sigaStock, mapping.sigaBrand].filter(Boolean) as string[];
-  const aro = getAroInfo(rows);
-  const byAro = aro && aroFilter ? rows.filter((r) => (r[aro.col] ?? "").toString().trim() === aroFilter) : rows;
-  const filtered = filterRows(byAro, search, cols);
-
-  return (
-    <>
-      {aro && <AroFilter aro={aro} value={aroFilter} onChange={setAroFilter} />}
-      {filtered.length === 0 ? (
-        <Empty msg={rows.length === 0 ? "¡Perfecto! No falta ningún producto en la web." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
-      ) : (
-        <TableWrapper>
-          <thead>
-            <tr className="text-left text-xs text-white/40 border-b border-white/10">
-              <th className="pb-2 pr-3">Código</th>
-              {mapping.sigaDesc && <th className="pb-2 pr-3">Descripción</th>}
-              {mapping.sigaPrice && <th className="pb-2 pr-3">Precio SIGA</th>}
-              {mapping.sigaStock && <th className="pb-2 pr-3">Stock</th>}
-              {mapping.sigaBrand && <th className="pb-2">Marca</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r, i) => (
-              <tr key={i} className="border-b border-white/5 hover:bg-white/5 text-sm">
-                <td className="py-2 pr-3 font-mono text-red-300">{r[mapping.sigaKey]}</td>
-                {mapping.sigaDesc && <td className="py-2 pr-3 text-white/80">{r[mapping.sigaDesc]}</td>}
-                {mapping.sigaPrice && <td className="py-2 pr-3 text-white/60">{r[mapping.sigaPrice]}</td>}
-                {mapping.sigaStock && <td className="py-2 pr-3 text-white/60">{r[mapping.sigaStock]}</td>}
-                {mapping.sigaBrand && <td className="py-2 text-white/50">{r[mapping.sigaBrand!]}</td>}
-              </tr>
-            ))}
-          </tbody>
-        </TableWrapper>
-      )}
-    </>
-  );
-}
-
-function ExtraTable({ rows, mapping, search }: { rows: Row[]; mapping: ColumnMapping; search: string }) {
-  const [aroFilter, setAroFilter] = useState("");
-  const cols = [mapping.webKey, mapping.webDesc, mapping.webPrice, mapping.webStock].filter(Boolean) as string[];
-  const aro = getAroInfo(rows);
-  const byAro = aro && aroFilter ? rows.filter((r) => (r[aro.col] ?? "").toString().trim() === aroFilter) : rows;
-  const filtered = filterRows(byAro, search, cols);
-
-  return (
-    <>
-      {aro && <AroFilter aro={aro} value={aroFilter} onChange={setAroFilter} />}
-      {filtered.length === 0 ? (
-        <Empty msg={rows.length === 0 ? "¡Perfecto! No sobra ningún producto en la web." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
-      ) : (
-        <TableWrapper>
-          <thead>
-            <tr className="text-left text-xs text-white/40 border-b border-white/10">
-              <th className="pb-2 pr-3">SKU Web</th>
-              {mapping.webDesc && <th className="pb-2 pr-3">Nombre</th>}
-              {mapping.webPrice && <th className="pb-2 pr-3">Precio Web</th>}
-              {mapping.webStock && <th className="pb-2">Stock Web</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r, i) => (
-              <tr key={i} className="border-b border-white/5 hover:bg-white/5 text-sm">
-                <td className="py-2 pr-3 font-mono text-yellow-300">{r[mapping.webKey]}</td>
-                {mapping.webDesc && <td className="py-2 pr-3 text-white/80">{r[mapping.webDesc]}</td>}
-                {mapping.webPrice && <td className="py-2 pr-3 text-white/60">{r[mapping.webPrice]}</td>}
-                {mapping.webStock && <td className="py-2 text-white/60">{r[mapping.webStock]}</td>}
-              </tr>
-            ))}
-          </tbody>
-        </TableWrapper>
-      )}
-    </>
-  );
-}
-
-function DiffsTable({ rows, mapping, search }: { rows: DiffRow[]; mapping: ColumnMapping; search: string }) {
-  const [aroFilter, setAroFilter] = useState("");
-  const sigaRows = rows.map((r) => r.sigaRow);
-  const aro = getAroInfo(sigaRows);
-  const byAro = aro && aroFilter ? rows.filter((r) => (r.sigaRow[aro.col] ?? "").toString().trim() === aroFilter) : rows;
-  const filtered = search
-    ? byAro.filter((r) => r.key.toLowerCase().includes(search.toLowerCase()) ||
-        (mapping.sigaDesc && (r.sigaRow[mapping.sigaDesc] ?? "").toLowerCase().includes(search.toLowerCase())))
-    : byAro;
-
-  const fields: { label: string; sigaCol?: string; webCol?: string }[] = [
-    { label: "Nombre", sigaCol: mapping.sigaDesc, webCol: mapping.webDesc },
-    { label: "Precio", sigaCol: mapping.sigaPrice, webCol: mapping.webPrice },
-    { label: "Stock", sigaCol: mapping.sigaStock, webCol: mapping.webStock },
-  ].filter((f) => f.sigaCol && f.webCol);
-
-  return (
-    <>
-      {aro && <AroFilter aro={aro} value={aroFilter} onChange={setAroFilter} />}
-      {filtered.length === 0 ? (
-        <Empty msg={rows.length === 0 ? "¡Perfecto! No hay diferencias." : "No hay resultados para la búsqueda."} good={rows.length === 0} />
-      ) : (
-        <TableWrapper>
-          <thead>
-            <tr className="text-left text-xs text-white/40 border-b border-white/10">
-              <th className="pb-2 pr-3 whitespace-nowrap">Código</th>
-              {fields.map((f) => (
-                <>
-                  <th key={`siga-${f.label}`} className="pb-2 pr-3 whitespace-nowrap">{f.label} SIGA</th>
-                  <th key={`web-${f.label}`} className="pb-2 pr-3 whitespace-nowrap">{f.label} Web</th>
-                </>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r) => {
-              const diffFields = new Set(r.differences.map((d) => d.field));
-              return (
-                <tr key={r.key} className="border-b border-white/5 hover:bg-white/5 text-sm">
-                  <td className="py-2 pr-3 font-mono text-blue-300 whitespace-nowrap">{r.key}</td>
-                  {fields.map((f) => {
-                    const differs = diffFields.has(f.label);
-                    const sv = f.sigaCol ? (r.sigaRow[f.sigaCol] ?? "") : "";
-                    const wv = f.webCol ? (r.webRow[f.webCol] ?? "") : "";
-                    return (
-                      <>
-                        <td key={`siga-${f.label}`} className={`py-2 pr-3 ${differs ? "text-orange-300 font-medium" : "text-white/60"}`}>{sv}</td>
-                        <td key={`web-${f.label}`} className={`py-2 pr-3 ${differs ? "text-orange-300/70 font-medium" : "text-white/40"}`}>{wv}</td>
-                      </>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </TableWrapper>
-      )}
-    </>
-  );
-}
-
-function TableWrapper({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="overflow-auto max-h-[50vh] bg-white/5 border border-white/10 rounded-xl">
-      <table className="w-full px-4">{children}</table>
-    </div>
-  );
-}
-
-function Empty({ msg, good }: { msg: string; good: boolean }) {
-  return (
-    <div className={`rounded-xl p-6 text-center border ${good ? "bg-green-900/20 border-green-500/30 text-green-300" : "bg-white/5 border-white/10 text-white/40"}`}>
-      {good ? "✅ " : "🔍 "}{msg}
     </div>
   );
 }
