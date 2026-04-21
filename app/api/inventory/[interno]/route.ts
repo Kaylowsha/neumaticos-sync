@@ -7,6 +7,7 @@ export async function PATCH(
 ) {
   try {
     const { interno } = await params;
+    const db = sql();
     const body: Record<string, string> = await req.json();
 
     const colMap: Record<string, string> = {
@@ -19,11 +20,11 @@ export async function PATCH(
       const col = colMap[field];
       if (!col) continue;
       if (col === "descripcion") {
-        await sql`UPDATE siga_products SET descripcion=${value}, updated_at=NOW() WHERE interno=${interno}`;
+        await db`UPDATE siga_products SET descripcion=${value}, updated_at=NOW() WHERE interno=${interno}`;
       } else if (col === "precio") {
-        await sql`UPDATE siga_products SET precio=${value}, updated_at=NOW() WHERE interno=${interno}`;
+        await db`UPDATE siga_products SET precio=${value}, updated_at=NOW() WHERE interno=${interno}`;
       } else if (col === "stock") {
-        await sql`UPDATE siga_products SET stock=${value}, updated_at=NOW() WHERE interno=${interno}`;
+        await db`UPDATE siga_products SET stock=${value}, updated_at=NOW() WHERE interno=${interno}`;
       }
     }
     return NextResponse.json({ ok: true });
@@ -38,7 +39,8 @@ export async function DELETE(
 ) {
   try {
     const { interno } = await params;
-    await sql`DELETE FROM siga_products WHERE interno = ${interno}`;
+    const db = sql();
+    await db`DELETE FROM siga_products WHERE interno = ${interno}`;
     return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
@@ -51,8 +53,9 @@ export async function PUT(
 ) {
   try {
     const { interno } = await params;
+    const db = sql();
     const body: Record<string, string> = await req.json();
-    await sql`
+    await db`
       INSERT INTO siga_products (interno, descripcion, precio, stock)
       VALUES (
         ${interno},

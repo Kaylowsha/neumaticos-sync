@@ -5,11 +5,12 @@ import type { Row } from "@/lib/types";
 export async function GET() {
   try {
     await ensureTable();
-    const rows = await sql`
+    const db = sql();
+    const rows = await db`
       SELECT interno, descripcion, precio, stock
       FROM siga_products
       ORDER BY interno
-    `;
+    ` as Record<string, string>[];
     const mapped: Row[] = rows.map((r) => ({
       Interno: r.interno,
       Descripcion: r.descripcion,
@@ -25,27 +26,25 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     await ensureTable();
+    const db = sql();
     const { rows }: { rows: Row[] } = await req.json();
 
-    // Upsert todos los productos en una sola transacción
-    await sql`TRUNCATE siga_products`;
-    if (rows.length > 0) {
-      for (const row of rows) {
-        await sql`
-          INSERT INTO siga_products (interno, descripcion, precio, stock)
-          VALUES (
-            ${row["Interno"] ?? ""},
-            ${row["Descripcion"] ?? ""},
-            ${row["Precio Lista (c/IVA)"] ?? ""},
-            ${row["Stock Total"] ?? ""}
-          )
-          ON CONFLICT (interno) DO UPDATE
-            SET descripcion = EXCLUDED.descripcion,
-                precio      = EXCLUDED.precio,
-                stock       = EXCLUDED.stock,
-                updated_at  = NOW()
-        `;
-      }
+    await db`TRUNCATE siga_products`;
+    for (const row of rows) {
+      await db`
+        INSERT INTO siga_products (interno, descripcion, precio, stock)
+        VALUES (
+          ${row["Interno"] ?? ""},
+          ${row["Descripcion"] ?? ""},
+          ${row["Precio Lista (c/IVA)"] ?? ""},
+          ${row["Stock Total"] ?? ""}
+        )
+        ON CONFLICT (interno) DO UPDATE
+          SET descripcion = EXCLUDED.descripcion,
+              precio      = EXCLUDED.precio,
+              stock       = EXCLUDED.stock,
+              updated_at  = NOW()
+      `;
     }
     return NextResponse.json({ ok: true, count: rows.length });
   } catch (e) {
