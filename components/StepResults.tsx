@@ -110,6 +110,7 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
   const [tipoFilter, setTipoFilter]       = useState<TipoFilter>("todos");
   const [decisions, setDecisions]         = useState<Record<string, ExtraDecision>>(loadDecisions);
   const [difsCorrections, setDifsCorr]   = useState<Record<string, string[]>>(loadDifsCorrections);
+  const [expandedKey, setExpandedKey]     = useState<string | null>(null);
 
   function setDecision(key: string, decision: ExtraDecision) {
     setDecisions((prev) => {
@@ -348,8 +349,19 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                               : row.type === "extra"   ? "text-yellow-300"
                               : "text-white/80";
 
+              const isExpanded = expandedKey === row.key;
+              const webRow = row.type !== "missing" ? (row as any).webRow as Record<string, string> : null;
+              const excerpt = webRow?.["post_excerpt"]?.trim() ?? "";
+              const content = (webRow?.["post_content"] ?? "").replace(/<[^>]+>/g, "").trim();
+              const colCount = 2 + fields.length * 2;
+
               return (
-                <tr key={i} className={`border-b border-white/5 hover:bg-white/5 ${isHandled ? "opacity-50" : ""}`}>
+                <>
+                <tr
+                  key={i}
+                  onClick={() => setExpandedKey(isExpanded ? null : row.key)}
+                  className={`border-b border-white/5 hover:bg-white/5 cursor-pointer ${isHandled ? "opacity-50" : ""}`}
+                >
                   <td className={`py-2 px-3 font-mono whitespace-nowrap ${skuColor}`}>{row.key}</td>
                   <td className="py-2 px-2">
                     <div className="flex items-center gap-1 flex-wrap">
@@ -414,6 +426,33 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                     );
                   })}
                 </tr>
+                {isExpanded && (
+                  <tr key={`exp-${i}`} className="border-b border-white/5 bg-white/[0.03]">
+                    <td colSpan={colCount} className="px-6 py-3 text-xs text-white/60 space-y-1.5">
+                      {row.type === "missing" ? (
+                        <p className="text-white/30 italic">Producto no está en web aún</p>
+                      ) : !excerpt && !content ? (
+                        <p className="text-white/30 italic">Sin descripción cargada</p>
+                      ) : (
+                        <>
+                          {excerpt && (
+                            <div className="flex gap-2">
+                              <span className="text-white/30 shrink-0 w-24">Desc. corta:</span>
+                              <span className="text-white/70">{excerpt}</span>
+                            </div>
+                          )}
+                          {content && (
+                            <div className="flex gap-2">
+                              <span className="text-white/30 shrink-0 w-24">Descripción:</span>
+                              <span className="text-white/60 whitespace-pre-wrap max-h-32 overflow-y-auto block">{content}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </>
               );
             })}
           </tbody>
