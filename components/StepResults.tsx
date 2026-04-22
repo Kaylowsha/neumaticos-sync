@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { ColumnMapping, ComparisonResult, Row } from "@/lib/types";
-import { exportToXlsx } from "@/lib/comparison";
+import { exportToXlsx, exportForWooCommerce } from "@/lib/comparison";
 import { parseTireSize } from "@/lib/parsers";
 
 interface Props {
@@ -446,6 +446,12 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
               </button>
             ))}
           </div>
+          <button
+            onClick={() => exportForWooCommerce(result, mapping, difsCorrections)}
+            className="px-4 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold transition whitespace-nowrap"
+          >
+            🛒 Exportar para WooCommerce
+          </button>
           <button
             onClick={() => exportToXlsx(result, mapping)}
             className="px-4 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 text-white text-sm font-semibold transition whitespace-nowrap"

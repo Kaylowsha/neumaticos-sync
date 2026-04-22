@@ -89,6 +89,58 @@ function buildDiffs(
   return diffs;
 }
 
+export function exportForWooCommerce(
+  result: ComparisonResult,
+  mapping: ColumnMapping,
+  corrections: Record<string, string[]>
+): void {
+  const rows = result.withDifferences
+    .filter((d) => {
+      // excluir filas donde TODOS los campos con diff ya están marcados como corregidos
+      const corrected = corrections[d.key] ?? [];
+      return !d.differences.every((diff) => corrected.includes(diff.field));
+    })
+    .map((d) => {
+      const row: Record<string, string> = {};
+      // ID para que WooCommerce matchee más rápido
+      const id = d.webRow["ID"] ?? d.webRow["id"] ?? "";
+      if (id) row["ID"] = id;
+      row["sku"] = d.key;
+      // precio desde SIGA
+      if (mapping.sigaPrice) row["regular_price"] = d.sigaRow[mapping.sigaPrice] ?? "";
+      // stock desde SIGA
+      if (mapping.sigaStock) row["stock"] = d.sigaRow[mapping.sigaStock] ?? "";
+      // mantener estado actual de la web
+      row["post_status"] = d.webRow["post_status"] ?? "publish";
+      return row;
+    });
+
+  if (rows.length === 0) {
+    alert("No hay diferencias pendientes para exportar.");
+    return;
+  }
+
+  // Generar CSV manualmente (sin dependencia extra)
+  const headers = [...new Set(rows.flatMap(Object.keys))];
+  const csv = [
+    headers.join(","),
+    ...rows.map((r) =>
+      headers.map((h) => {
+        const val = r[h] ?? "";
+        return val.includes(",") || val.includes('"') ? `"${val.replace(/"/g, '""')}"` : val;
+      }).join(",")
+    ),
+  ].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "actualizacion-woocommerce.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function exportToXlsx(result: ComparisonResult, mapping: ColumnMapping): void {
   const XLSX = require("xlsx") as typeof import("xlsx");
 
