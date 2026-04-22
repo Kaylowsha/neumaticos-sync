@@ -18,6 +18,7 @@ type UnifiedRow =
   | { type: "matched"; key: string; sigaRow: Row; webRow: Row; diffFields: Set<string> };
 
 type ExtraDecision = "quitado" | "mantener" | null;
+type TipoFilter = "todos" | "missing" | "extra" | "diff" | "ok";
 
 function getRowName(row: UnifiedRow, mapping: ColumnMapping): string {
   if (row.type === "extra") return mapping.webDesc ? (row.webRow[mapping.webDesc] ?? "") : "";
@@ -26,8 +27,7 @@ function getRowName(row: UnifiedRow, mapping: ColumnMapping): string {
 
 function getWebStatus(row: UnifiedRow): string {
   if (row.type === "missing") return "";
-  const webRow = row.type === "extra" ? row.webRow : row.webRow;
-  return (webRow["post_status"] ?? "").toLowerCase();
+  return (row.webRow["post_status"] ?? "").toLowerCase();
 }
 
 function buildUnified(result: ComparisonResult, mapping: ColumnMapping): UnifiedRow[] {
@@ -46,6 +46,11 @@ function buildUnified(result: ComparisonResult, mapping: ColumnMapping): Unified
 
 function loadDecisions(): Record<string, ExtraDecision> {
   try { return JSON.parse(localStorage.getItem("extra-decisions") ?? "{}"); }
+  catch { return {}; }
+}
+
+function loadDifsCorrections(): Record<string, string[]> {
+  try { return JSON.parse(localStorage.getItem("difs-corrections") ?? "{}"); }
   catch { return {}; }
 }
 
@@ -78,29 +83,55 @@ function ChipGroup({ label, options, selected, onToggle }: { label: string; opti
 }
 
 const STATUS: Record<string, { label: string; cls: string }> = {
-  missing:  { label: "FALTA",    cls: "bg-red-900/40 text-red-300 border-red-500/30" },
-  extra:    { label: "SOBRA",    cls: "bg-yellow-900/40 text-yellow-300 border-yellow-500/30" },
-  matched:  { label: "OK",       cls: "bg-green-900/30 text-green-400 border-green-500/30" },
-  diff:     { label: "DIFS",     cls: "bg-orange-900/40 text-orange-300 border-orange-500/30" },
-  quitado:  { label: "QUITADO",  cls: "bg-red-900/30 text-red-400/70 border-red-500/20" },
-  mantener: { label: "MANTENER", cls: "bg-blue-900/40 text-blue-300 border-blue-500/30" },
+  missing:    { label: "FALTA",     cls: "bg-red-900/40 text-red-300 border-red-500/30" },
+  extra:      { label: "SOBRA",     cls: "bg-yellow-900/40 text-yellow-300 border-yellow-500/30" },
+  matched:    { label: "OK",        cls: "bg-green-900/30 text-green-400 border-green-500/30" },
+  diff:       { label: "DIFS",      cls: "bg-orange-900/40 text-orange-300 border-orange-500/30" },
+  quitado:    { label: "QUITADO",   cls: "bg-red-900/30 text-red-400/70 border-red-500/20" },
+  mantener:   { label: "MANTENER",  cls: "bg-blue-900/40 text-blue-300 border-blue-500/30" },
+  corregido:  { label: "CORREGIDO", cls: "bg-green-900/30 text-green-400/70 border-green-500/20" },
 };
 
+const TIPO_BTNS: { val: TipoFilter; label: string }[] = [
+  { val: "todos",   label: "Todos" },
+  { val: "missing", label: "Faltan" },
+  { val: "extra",   label: "Sobran" },
+  { val: "diff",    label: "DIFS" },
+  { val: "ok",      label: "Coinciden" },
+];
+
 export default function StepResults({ result, mapping, onBack, onReset }: Props) {
-  const [skuFilter, setSkuFilter]     = useState("");
-  const [medidaFilter, setMedidaFilter] = useState("");
-  const [aroSel, setAroSel]           = useState<Set<string>>(new Set());
-  const [perfilSel, setPerfilSel]     = useState<Set<string>>(new Set());
-  const [anchoSel, setAnchoSel]       = useState<Set<string>>(new Set());
-  const [estadoWeb, setEstadoWeb]     = useState<"todos" | "publicado" | "borrador">("todos");
-  const [decisions, setDecisions]     = useState<Record<string, ExtraDecision>>(loadDecisions);
+  const [skuFilter, setSkuFilter]         = useState("");
+  const [medidaFilter, setMedidaFilter]   = useState("");
+  const [aroSel, setAroSel]               = useState<Set<string>>(new Set());
+  const [perfilSel, setPerfilSel]         = useState<Set<string>>(new Set());
+  const [anchoSel, setAnchoSel]           = useState<Set<string>>(new Set());
+  const [estadoWeb, setEstadoWeb]         = useState<"todos" | "publicado" | "borrador">("todos");
+  const [tipoFilter, setTipoFilter]       = useState<TipoFilter>("todos");
+  const [decisions, setDecisions]         = useState<Record<string, ExtraDecision>>(loadDecisions);
+  const [difsCorrections, setDifsCorr]   = useState<Record<string, string[]>>(loadDifsCorrections);
 
   function setDecision(key: string, decision: ExtraDecision) {
     setDecisions((prev) => {
       const next = { ...prev };
-      if (next[key] === decision) delete next[key]; // toggle off
+      if (next[key] === decision) delete next[key];
       else next[key] = decision;
       localStorage.setItem("extra-decisions", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function toggleCorrection(key: string, field: string) {
+    setDifsCorr((prev) => {
+      const current = prev[key] ?? [];
+      const next = { ...prev };
+      if (current.includes(field)) {
+        next[key] = current.filter((f) => f !== field);
+        if (next[key].length === 0) delete next[key];
+      } else {
+        next[key] = [...current, field];
+      }
+      localStorage.setItem("difs-corrections", JSON.stringify(next));
       return next;
     });
   }
@@ -125,8 +156,48 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
     setSel(next);
   };
 
+  const fields: { label: string; sigaCol?: string; webCol?: string }[] = [
+    { label: "Nombre", sigaCol: mapping.sigaDesc,  webCol: mapping.webDesc  },
+    { label: "Precio", sigaCol: mapping.sigaPrice, webCol: mapping.webPrice },
+    { label: "Stock",  sigaCol: mapping.sigaStock, webCol: mapping.webStock },
+  ].filter((f) => f.sigaCol || f.webCol);
+
+  // Contadores dinámicos
+  const extraRows = allRows.filter((r) => r.type === "extra");
+  const sobraPendiente = extraRows.filter((r) => !decisions[r.key]).length;
+  const sobraQuitados  = extraRows.filter((r) => decisions[r.key] === "quitado").length;
+  const sobraMantener  = extraRows.filter((r) => decisions[r.key] === "mantener").length;
+
+  const difRows = allRows.filter((r) => r.type === "matched" && (r as Extract<UnifiedRow, {type:"matched"}>).diffFields.size > 0);
+  const difCorregidos = difRows.filter((r) => {
+    const matched = r as Extract<UnifiedRow, {type:"matched"}>;
+    const corrected = difsCorrections[r.key] ?? [];
+    return [...matched.diffFields].every((f) => {
+      // map diffField (sigaCol name) to label
+      const fieldLabel = fields.find((fl) => fl.sigaCol === f || fl.webCol === f || fl.label.toLowerCase() === f.toLowerCase())?.label ?? f;
+      return corrected.includes(fieldLabel);
+    });
+  }).length;
+  const difPendiente = difRows.length - difCorregidos;
+
+  const summaryCards = [
+    { label: "Faltan en web",      count: result.missingOnWeb.length,                                color: "text-red-400",    sub: null },
+    { label: "Sobran — pendiente", count: sobraPendiente,                                            color: "text-yellow-400", sub: `${sobraQuitados} quitar · ${sobraMantener} mantener` },
+    { label: "Con diferencias",    count: difPendiente,                                              color: "text-orange-400", sub: difCorregidos > 0 ? `${difCorregidos} corregidos` : null },
+    { label: "Coinciden",          count: result.allMatched.length - result.withDifferences.length,  color: "text-green-400",  sub: null },
+  ];
+
   const filtered = useMemo(() => {
     return allRows.filter((row) => {
+      // tipo filter
+      if (tipoFilter !== "todos") {
+        const isDiff = row.type === "matched" && (row as Extract<UnifiedRow, {type:"matched"}>).diffFields.size > 0;
+        if (tipoFilter === "missing" && row.type !== "missing") return false;
+        if (tipoFilter === "extra"   && row.type !== "extra")   return false;
+        if (tipoFilter === "diff"    && !(row.type === "matched" && isDiff)) return false;
+        if (tipoFilter === "ok"      && !(row.type === "matched" && !isDiff)) return false;
+      }
+
       const key = row.key.toLowerCase();
       if (skuFilter && !key.includes(skuFilter.toLowerCase())) return false;
 
@@ -148,26 +219,7 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
 
       return true;
     });
-  }, [allRows, skuFilter, medidaFilter, aroSel, perfilSel, anchoSel, estadoWeb, mapping]);
-
-  // Contadores dinámicos
-  const extraRows = allRows.filter((r) => r.type === "extra");
-  const sobraPendiente = extraRows.filter((r) => !decisions[r.key]).length;
-  const sobraQuitados  = extraRows.filter((r) => decisions[r.key] === "quitado").length;
-  const sobraMantener  = extraRows.filter((r) => decisions[r.key] === "mantener").length;
-
-  const fields: { label: string; sigaCol?: string; webCol?: string }[] = [
-    { label: "Nombre", sigaCol: mapping.sigaDesc, webCol: mapping.webDesc },
-    { label: "Precio", sigaCol: mapping.sigaPrice, webCol: mapping.webPrice },
-    { label: "Stock",  sigaCol: mapping.sigaStock, webCol: mapping.webStock },
-  ].filter((f) => f.sigaCol || f.webCol);
-
-  const summaryCards = [
-    { label: "Faltan en web",    count: result.missingOnWeb.length,                              color: "text-red-400",    sub: null },
-    { label: "Sobran — pendiente", count: sobraPendiente,                                        color: "text-yellow-400", sub: `${sobraQuitados} quitar · ${sobraMantener} mantener` },
-    { label: "Con diferencias",  count: result.withDifferences.length,                           color: "text-orange-400", sub: null },
-    { label: "Coinciden",        count: result.allMatched.length - result.withDifferences.length, color: "text-green-400",  sub: null },
-  ];
+  }, [allRows, skuFilter, medidaFilter, aroSel, perfilSel, anchoSel, estadoWeb, tipoFilter, mapping]);
 
   const estadoBtns: { val: typeof estadoWeb; label: string }[] = [
     { val: "todos",     label: "Todos" },
@@ -177,20 +229,27 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
 
   return (
     <div className="space-y-4">
-      {/* Summary */}
+      {/* Summary — clicables para filtrar por tipo */}
       <div className="grid grid-cols-4 gap-2">
-        {summaryCards.map((c) => (
-          <div key={c.label} className="bg-white/5 border border-white/10 rounded-xl p-3 text-center">
-            <p className={`text-2xl font-bold ${c.color}`}>{c.count}</p>
-            <p className="text-xs text-white/40 mt-1">{c.label}</p>
-            {c.sub && <p className="text-[10px] text-white/25 mt-0.5">{c.sub}</p>}
-          </div>
-        ))}
+        {summaryCards.map((c, i) => {
+          const tipoVal: TipoFilter = (["missing","extra","diff","ok"] as TipoFilter[])[i];
+          const isActive = tipoFilter === tipoVal;
+          return (
+            <button
+              key={c.label}
+              onClick={() => setTipoFilter(isActive ? "todos" : tipoVal)}
+              className={`bg-white/5 border rounded-xl p-3 text-center transition ${isActive ? "border-white/40 ring-1 ring-white/20" : "border-white/10 hover:border-white/25"}`}
+            >
+              <p className={`text-2xl font-bold ${c.color}`}>{c.count}</p>
+              <p className="text-xs text-white/40 mt-1">{c.label}</p>
+              {c.sub && <p className="text-[10px] text-white/25 mt-0.5">{c.sub}</p>}
+            </button>
+          );
+        })}
       </div>
 
       {/* Filters */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
-        {/* Fila 1: búsqueda + estado web + exportar */}
         <div className="flex gap-2 flex-wrap">
           <input
             type="text"
@@ -206,6 +265,20 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
             onChange={(e) => setMedidaFilter(e.target.value)}
             className="flex-1 min-w-32 bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-sm text-white placeholder-white/30 focus:outline-none focus:border-white/50"
           />
+          {/* Filtro tipo */}
+          <div className="flex rounded-lg overflow-hidden border border-white/20">
+            {TIPO_BTNS.map((b) => (
+              <button
+                key={b.val}
+                onClick={() => setTipoFilter(b.val)}
+                className={`px-3 py-1.5 text-xs font-medium transition ${
+                  tipoFilter === b.val ? "bg-blue-600 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"
+                }`}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
           {/* Filtro publicado/borrador */}
           <div className="flex rounded-lg overflow-hidden border border-white/20">
             {estadoBtns.map((b) => (
@@ -213,9 +286,7 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                 key={b.val}
                 onClick={() => setEstadoWeb(b.val)}
                 className={`px-3 py-1.5 text-xs font-medium transition ${
-                  estadoWeb === b.val
-                    ? "bg-blue-600 text-white"
-                    : "bg-white/5 text-white/50 hover:bg-white/10"
+                  estadoWeb === b.val ? "bg-indigo-600 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"
                 }`}
               >
                 {b.label}
@@ -254,16 +325,28 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
             {filtered.length === 0 ? (
               <tr><td colSpan={2 + fields.length * 2} className="py-8 text-center text-white/30">Sin resultados</td></tr>
             ) : filtered.map((row, i) => {
-              const isDiff     = row.type === "matched" && (row as Extract<UnifiedRow, { type: "matched" }>).diffFields.size > 0;
-              const decision   = row.type === "extra" ? decisions[row.key] : null;
-              const statusKey  = decision ?? (row.type === "matched" && isDiff ? "diff" : row.type);
+              const matched   = row.type === "matched" ? row as Extract<UnifiedRow, {type:"matched"}> : null;
+              const isDiff    = !!matched && matched.diffFields.size > 0;
+              const decision  = row.type === "extra" ? decisions[row.key] : null;
+              const corrected = difsCorrections[row.key] ?? [];
+
+              // para DIFS: ¿están todos los campos corregidos?
+              const allCorrected = isDiff && matched
+                ? [...matched.diffFields].every((f) => {
+                    const lbl = fields.find((fl) => fl.sigaCol === f || fl.webCol === f)?.label ?? f;
+                    return corrected.includes(lbl);
+                  })
+                : false;
+
+              const statusKey = decision ?? (allCorrected ? "corregido" : isDiff ? "diff" : row.type);
               const { label: stLabel, cls: stCls } = STATUS[statusKey];
-              const isHandled  = !!decision;
-              const skuColor   = decision === "quitado" ? "text-red-400/50"
-                               : decision === "mantener" ? "text-blue-300"
-                               : row.type === "missing" ? "text-red-300"
-                               : row.type === "extra"   ? "text-yellow-300"
-                               : "text-white/80";
+              const isHandled = !!decision || allCorrected;
+              const skuColor  = decision === "quitado" ? "text-red-400/50"
+                              : decision === "mantener" ? "text-blue-300"
+                              : allCorrected ? "text-green-400/50"
+                              : row.type === "missing" ? "text-red-300"
+                              : row.type === "extra"   ? "text-yellow-300"
+                              : "text-white/80";
 
               return (
                 <tr key={i} className={`border-b border-white/5 hover:bg-white/5 ${isHandled ? "opacity-50" : ""}`}>
@@ -271,34 +354,49 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                   <td className="py-2 px-2">
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${stCls}`}>{stLabel}</span>
+
+                      {/* SOBRA: botones quitar/mantener */}
                       {row.type === "extra" && !decision && (
                         <>
-                          <button
-                            onClick={() => setDecision(row.key, "quitado")}
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-red-900/20 text-red-400/70 border-red-500/20 hover:bg-red-900/40 hover:text-red-300 transition"
-                          >
+                          <button onClick={() => setDecision(row.key, "quitado")}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-red-900/20 text-red-400/70 border-red-500/20 hover:bg-red-900/40 hover:text-red-300 transition">
                             ✕ quitar
                           </button>
-                          <button
-                            onClick={() => setDecision(row.key, "mantener")}
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-900/20 text-blue-400/70 border-blue-500/20 hover:bg-blue-900/40 hover:text-blue-300 transition"
-                          >
+                          <button onClick={() => setDecision(row.key, "mantener")}
+                            className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-blue-900/20 text-blue-400/70 border-blue-500/20 hover:bg-blue-900/40 hover:text-blue-300 transition">
                             ✓ mantener
                           </button>
                         </>
                       )}
                       {row.type === "extra" && decision && (
-                        <button
-                          onClick={() => setDecision(row.key, decision)}
-                          className="text-[10px] px-1.5 py-0.5 rounded border bg-white/5 text-white/25 border-white/10 hover:text-white/50 transition"
-                        >
+                        <button onClick={() => setDecision(row.key, decision)}
+                          className="text-[10px] px-1.5 py-0.5 rounded border bg-white/5 text-white/25 border-white/10 hover:text-white/50 transition">
                           ↩
                         </button>
                       )}
+
+                      {/* DIFS: botón por campo diferente */}
+                      {isDiff && matched && fields.map((f) => {
+                        if (!matched.diffFields.has(f.sigaCol ?? "") && !matched.diffFields.has(f.webCol ?? "") && !matched.diffFields.has(f.label)) return null;
+                        const isCorrected = corrected.includes(f.label);
+                        return (
+                          <button
+                            key={f.label}
+                            onClick={() => toggleCorrection(row.key, f.label)}
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded border transition ${
+                              isCorrected
+                                ? "bg-green-900/30 text-green-400/70 border-green-500/20 hover:bg-green-900/50"
+                                : "bg-orange-900/20 text-orange-400/70 border-orange-500/20 hover:bg-orange-900/40 hover:text-orange-300"
+                            }`}
+                          >
+                            {isCorrected ? `✓ ${f.label}` : `✎ ${f.label}`}
+                          </button>
+                        );
+                      })}
                     </div>
                   </td>
                   {fields.map((f) => {
-                    const differs = row.type === "matched" && (row as Extract<UnifiedRow, { type: "matched" }>).diffFields.has(f.label);
+                    const differs = isDiff && matched && (matched.diffFields.has(f.sigaCol ?? "") || matched.diffFields.has(f.webCol ?? "") || matched.diffFields.has(f.label));
                     const sv = row.type !== "extra" && f.sigaCol ? ((row as any).sigaRow[f.sigaCol] ?? "") : "";
                     const rawWv = row.type !== "missing" && f.webCol ? ((row as any).webRow[f.webCol] ?? "") : "";
                     const wv = f.label === "Precio" && mapping.webSalePrice && row.type !== "missing"
