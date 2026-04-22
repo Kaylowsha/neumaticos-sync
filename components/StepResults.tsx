@@ -237,6 +237,20 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
   const [difsCorrections, setDifsCorr]   = useState<Record<string, string[]>>(loadDifsCorrections);
   const [modalData, setModalData]         = useState<ModalData | null>(null);
   const [readyKeys, setReadyKeys]         = useState<Set<string>>(loadReadyKeys);
+  const [webKeys, setWebKeys]             = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("web-keys") ?? "[]")); }
+    catch { return new Set(); }
+  });
+
+  function toggleWeb(key: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setWebKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      localStorage.setItem("web-keys", JSON.stringify([...next]));
+      return next;
+    });
+  }
 
   function toggleReady(key: string, e: React.MouseEvent) {
     e.stopPropagation();
@@ -532,6 +546,19 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                           onClick={(e) => toggleReady(row.key, e)}
                           className="text-[10px] px-1.5 py-0.5 rounded border bg-white/5 text-white/25 border-white/10 hover:text-white/50 transition"
                         >↩</button>
+                      )}
+
+                      {/* Badge WEB */}
+                      {webKeys.has(row.key) ? (
+                        <button
+                          onClick={(e) => toggleWeb(row.key, e)}
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-green-700/40 text-green-300 border-green-500/40 hover:bg-green-700/20 transition"
+                        >✓ WEB</button>
+                      ) : (
+                        <button
+                          onClick={(e) => toggleWeb(row.key, e)}
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-white/5 text-white/25 border-white/10 hover:bg-green-900/20 hover:text-green-400 hover:border-green-500/30 transition"
+                        >WEB</button>
                       )}
 
                       {/* SOBRA: botones quitar/mantener */}
