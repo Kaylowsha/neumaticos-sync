@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnMapping, ComparisonResult, Row } from "@/lib/types";
 import { exportToXlsx } from "@/lib/comparison";
 import { parseTireSize } from "@/lib/parsers";
@@ -22,13 +22,13 @@ function getRowName(row: UnifiedRow, mapping: ColumnMapping): string {
   return mapping.sigaDesc ? (row.sigaRow[mapping.sigaDesc] ?? "") : "";
 }
 
-function buildUnified(result: ComparisonResult): UnifiedRow[] {
+function buildUnified(result: ComparisonResult, mapping: ColumnMapping): UnifiedRow[] {
   const rows: UnifiedRow[] = [];
   for (const r of result.missingOnWeb) {
-    rows.push({ type: "missing", key: r[Object.keys(r)[0]] ?? "", sigaRow: r });
+    rows.push({ type: "missing", key: r[mapping.sigaKey] ?? r[Object.keys(r)[0]] ?? "", sigaRow: r });
   }
   for (const r of result.extraOnWeb) {
-    rows.push({ type: "extra", key: r[Object.keys(r)[0]] ?? "", webRow: r });
+    rows.push({ type: "extra", key: r[mapping.webKey] ?? r[Object.keys(r)[0]] ?? "", webRow: r });
   }
   for (const r of result.allMatched) {
     rows.push({ type: "matched", key: r.key, sigaRow: r.sigaRow, webRow: r.webRow, diffFields: new Set(r.differences.map((d) => d.field)) });
@@ -64,11 +64,12 @@ function ChipGroup({ label, options, selected, onToggle }: { label: string; opti
   );
 }
 
-const STATUS: Record<UnifiedRow["type"] | "diff", { label: string; cls: string }> = {
-  missing: { label: "FALTA",  cls: "bg-red-900/40 text-red-300 border-red-500/30" },
-  extra:   { label: "SOBRA",  cls: "bg-yellow-900/40 text-yellow-300 border-yellow-500/30" },
-  matched: { label: "OK",     cls: "bg-green-900/30 text-green-400 border-green-500/30" },
-  diff:    { label: "DIFS",   cls: "bg-orange-900/40 text-orange-300 border-orange-500/30" },
+const STATUS: Record<UnifiedRow["type"] | "diff" | "quitado", { label: string; cls: string }> = {
+  missing:  { label: "FALTA",   cls: "bg-red-900/40 text-red-300 border-red-500/30" },
+  extra:    { label: "SOBRA",   cls: "bg-yellow-900/40 text-yellow-300 border-yellow-500/30" },
+  matched:  { label: "OK",      cls: "bg-green-900/30 text-green-400 border-green-500/30" },
+  diff:     { label: "DIFS",    cls: "bg-orange-900/40 text-orange-300 border-orange-500/30" },
+  quitado:  { label: "QUITADO", cls: "bg-gray-700/60 text-gray-400 border-gray-500/30" },
 };
 
 export default function StepResults({ result, mapping, onBack, onReset }: Props) {
@@ -77,8 +78,21 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
   const [aroSel, setAroSel] = useState<Set<string>>(new Set());
   const [perfilSel, setPerfilSel] = useState<Set<string>>(new Set());
   const [anchoSel, setAnchoSel] = useState<Set<string>>(new Set());
+  const [quitados, setQuitados] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("quitados") ?? "[]")); }
+    catch { return new Set(); }
+  });
 
-  const allRows = useMemo(() => buildUnified(result), [result]);
+  function toggleQuitado(key: string) {
+    setQuitados((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      localStorage.setItem("quitados", JSON.stringify([...next]));
+      return next;
+    });
+  }
+
+  const allRows = useMemo(() => buildUnified(result, mapping), [result, mapping]);
 
   const dimOptions = useMemo(() => {
     const aros: string[] = [], perfiles: string[] = [], anchos: string[] = [];
@@ -192,15 +206,29 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
               <tr><td colSpan={2 + fields.length * 2} className="py-8 text-center text-white/30">Sin resultados</td></tr>
             ) : filtered.map((row, i) => {
               const isDiff = row.type === "matched" && (row as Extract<UnifiedRow, { type: "matched" }>).diffFields.size > 0;
-              const statusKey = row.type === "matched" && isDiff ? "diff" : row.type;
+              const isQuitado = row.type === "extra" && quitados.has(row.key);
+              const statusKey = isQuitado ? "quitado" : row.type === "matched" && isDiff ? "diff" : row.type;
               const { label: stLabel, cls: stCls } = STATUS[statusKey];
-              const skuColor = row.type === "missing" ? "text-red-300" : row.type === "extra" ? "text-yellow-300" : "text-white/80";
+              const skuColor = isQuitado ? "text-gray-500" : row.type === "missing" ? "text-red-300" : row.type === "extra" ? "text-yellow-300" : "text-white/80";
 
               return (
-                <tr key={i} className="border-b border-white/5 hover:bg-white/5">
+                <tr key={i} className={`border-b border-white/5 hover:bg-white/5 ${isQuitado ? "opacity-50" : ""}`}>
                   <td className={`py-2 px-3 font-mono whitespace-nowrap ${skuColor}`}>{row.key}</td>
-                  <td className="py-2 px-2">
+                  <td className="py-2 px-2 whitespace-nowrap">
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${stCls}`}>{stLabel}</span>
+                    {row.type === "extra" && (
+                      <button
+                        onClick={() => toggleQuitado(row.key)}
+                        className={`ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded border transition ${
+                          isQuitado
+                            ? "bg-gray-700/60 text-gray-400 border-gray-500/30 hover:border-yellow-500/50 hover:text-yellow-400"
+                            : "bg-white/5 text-white/30 border-white/10 hover:bg-gray-700/60 hover:text-gray-300 hover:border-gray-500/40"
+                        }`}
+                        title={isQuitado ? "Deshacer" : "Marcar como quitado"}
+                      >
+                        {isQuitado ? "↩ deshacer" : "✓ quitar"}
+                      </button>
+                    )}
                   </td>
                   {fields.map((f) => {
                     const differs = row.type === "matched" && (row as Extract<UnifiedRow, { type: "matched" }>).diffFields.has(f.label);
