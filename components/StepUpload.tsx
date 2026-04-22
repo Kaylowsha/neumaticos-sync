@@ -20,7 +20,11 @@ interface WebEntry {
 function mergeWebEntries(entries: WebEntry[]): ParsedFile {
   const allHeaders = [...new Set(entries.flatMap((e) => e.parsed.headers))];
   const allRows = entries.flatMap((e) =>
-    e.parsed.rows.map((row) => ({ ...row, post_status: e.status }))
+    e.parsed.rows.map((row) => {
+      // si la fila ya trae post_status del CSV, respetarlo; usar el label solo si está vacío
+      const original = (row["post_status"] ?? "").trim();
+      return { ...row, post_status: original || e.status };
+    })
   );
   return { rows: allRows, headers: allHeaders, fileName: entries.map((e) => e.parsed.fileName).join(" + ") };
 }
