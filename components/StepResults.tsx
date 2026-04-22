@@ -20,6 +20,92 @@ type UnifiedRow =
 type ExtraDecision = "quitado" | "mantener" | null;
 type TipoFilter = "todos" | "missing" | "extra" | "diff" | "ok";
 
+interface ModalData {
+  row: UnifiedRow;
+  excerpt: string;
+  content: string;
+}
+
+function CopyBlock({ label, value, placeholder }: { label: string; value: string; placeholder?: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-white/50 uppercase tracking-wide">{label}</span>
+        {value ? (
+          <button
+            onClick={copy}
+            className={`text-xs px-2.5 py-1 rounded-lg border transition font-medium ${
+              copied ? "bg-green-700 border-green-500 text-white" : "bg-white/10 border-white/20 text-white/50 hover:text-white hover:border-white/40"
+            }`}
+          >
+            {copied ? "✓ Copiado" : "Copiar"}
+          </button>
+        ) : null}
+      </div>
+      <div className={`rounded-lg px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap min-h-[48px] ${value ? "bg-white/[0.06] text-white/80 border border-white/10" : "bg-white/[0.03] text-white/25 border border-dashed border-white/10 italic"}`}>
+        {value || (placeholder ?? "Sin contenido")}
+      </div>
+    </div>
+  );
+}
+
+function ProductModal({ data, mapping, onClose }: { data: ModalData; mapping: ColumnMapping; onClose: () => void }) {
+  const { row, excerpt, content } = data;
+  const webRow = row.type !== "missing" ? (row as any).webRow as Record<string, string> : null;
+  const sigaRow = row.type !== "extra" ? (row as any).sigaRow as Record<string, string> : null;
+
+  const title = webRow?.[mapping.webDesc ?? ""] ?? sigaRow?.[mapping.sigaDesc ?? ""] ?? row.key;
+  const status = (webRow?.["post_status"] ?? "").toLowerCase();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-[#0d1117] border border-white/15 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-white/10 sticky top-0 bg-[#0d1117] z-10">
+          <div>
+            <p className="text-xs text-white/30 font-mono mb-0.5">SKU {row.key}</p>
+            <h2 className="text-base font-semibold text-white leading-snug">{title}</h2>
+            {status && <span className={`text-[10px] font-medium mt-1 inline-block px-2 py-0.5 rounded-full ${status.includes("publish") ? "bg-green-900/40 text-green-300" : "bg-yellow-900/40 text-yellow-300"}`}>{status.includes("publish") ? "Publicado" : "Borrador"}</span>}
+          </div>
+          <button onClick={onClose} className="text-white/30 hover:text-white text-xl leading-none ml-4 mt-0.5">✕</button>
+        </div>
+
+        {/* Datos */}
+        <div className="px-6 py-4 space-y-5">
+          {/* Precios / stock side by side */}
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: "Precio Inv.", val: sigaRow?.[mapping.sigaPrice ?? ""] ?? "" },
+              { label: "Precio Web", val: webRow?.[mapping.webSalePrice ?? ""] || webRow?.[mapping.webPrice ?? ""] || "" },
+              { label: "Stock Inv.", val: sigaRow?.[mapping.sigaStock ?? ""] ?? "" },
+              { label: "Stock Web", val: webRow?.[mapping.webStock ?? ""] ?? "" },
+            ].map(({ label, val }) => val ? (
+              <div key={label} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-white/30 mb-0.5">{label}</p>
+                <p className="text-sm font-mono text-white/80">{val}</p>
+              </div>
+            ) : null)}
+          </div>
+
+          {/* Descripciones */}
+          <CopyBlock label="Descripción corta (post_excerpt)" value={excerpt} placeholder="Sin descripción corta" />
+          <CopyBlock label="Descripción completa (post_content)" value={content} placeholder="Sin descripción completa" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function getRowName(row: UnifiedRow, mapping: ColumnMapping): string {
   if (row.type === "extra") return mapping.webDesc ? (row.webRow[mapping.webDesc] ?? "") : "";
   return mapping.sigaDesc ? (row.sigaRow[mapping.sigaDesc] ?? "") : "";
@@ -110,7 +196,7 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
   const [tipoFilter, setTipoFilter]       = useState<TipoFilter>("todos");
   const [decisions, setDecisions]         = useState<Record<string, ExtraDecision>>(loadDecisions);
   const [difsCorrections, setDifsCorr]   = useState<Record<string, string[]>>(loadDifsCorrections);
-  const [expandedKey, setExpandedKey]     = useState<string | null>(null);
+  const [modalData, setModalData]         = useState<ModalData | null>(null);
 
   function setDecision(key: string, decision: ExtraDecision) {
     setDecisions((prev) => {
@@ -229,6 +315,8 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
   ];
 
   return (
+    <>
+    {modalData && <ProductModal data={modalData} mapping={mapping} onClose={() => setModalData(null)} />}
     <div className="space-y-4">
       {/* Summary — clicables para filtrar por tipo */}
       <div className="grid grid-cols-4 gap-2">
@@ -349,21 +437,19 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                               : row.type === "extra"   ? "text-yellow-300"
                               : "text-white/80";
 
-              const isExpanded = expandedKey === row.key;
               const webRow = row.type !== "missing" ? (row as any).webRow as Record<string, string> : null;
               const excerpt = webRow?.["post_excerpt"]?.trim() ?? "";
-              const content = (webRow?.["post_content"] ?? "").replace(/<[^>]+>/g, "").trim();
-              const colCount = 2 + fields.length * 2;
+              const content = (webRow?.["post_content"] ?? "").replace(/<[^>]+>|&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 
               return (
                 <>
                 <tr
                   key={i}
-                  onClick={() => setExpandedKey(isExpanded ? null : row.key)}
+                  onClick={() => setModalData({ row, excerpt, content })}
                   className={`border-b border-white/5 hover:bg-white/5 cursor-pointer ${isHandled ? "opacity-50" : ""}`}
                 >
                   <td className={`py-2 px-3 font-mono whitespace-nowrap ${skuColor}`}>{row.key}</td>
-                  <td className="py-2 px-2">
+                  <td className="py-2 px-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${stCls}`}>{stLabel}</span>
 
@@ -426,33 +512,7 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
                     );
                   })}
                 </tr>
-                {isExpanded && (
-                  <tr key={`exp-${i}`} className="border-b border-white/5 bg-white/[0.03]">
-                    <td colSpan={colCount} className="px-6 py-3 text-xs text-white/60 space-y-1.5">
-                      {row.type === "missing" ? (
-                        <p className="text-white/30 italic">Producto no está en web aún</p>
-                      ) : !excerpt && !content ? (
-                        <p className="text-white/30 italic">Sin descripción cargada</p>
-                      ) : (
-                        <>
-                          {excerpt && (
-                            <div className="flex gap-2">
-                              <span className="text-white/30 shrink-0 w-24">Desc. corta:</span>
-                              <span className="text-white/70">{excerpt}</span>
-                            </div>
-                          )}
-                          {content && (
-                            <div className="flex gap-2">
-                              <span className="text-white/30 shrink-0 w-24">Descripción:</span>
-                              <span className="text-white/60 whitespace-pre-wrap max-h-32 overflow-y-auto block">{content}</span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                )}
-                </>
+</>
               );
             })}
           </tbody>
@@ -468,5 +528,6 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
         </button>
       </div>
     </div>
+    </>
   );
 }
