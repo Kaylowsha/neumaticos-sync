@@ -56,10 +56,18 @@ function CopyBlock({ label, value, placeholder }: { label: string; value: string
   );
 }
 
+function loadSuggestions(): Record<string, { excerpt: string; content: string }> {
+  try { return JSON.parse(localStorage.getItem("desc-suggestions") ?? "{}"); }
+  catch { return {}; }
+}
+
 function ProductModal({ data, mapping, onClose }: { data: ModalData; mapping: ColumnMapping; onClose: () => void }) {
   const { row, excerpt, content } = data;
   const webRow = row.type !== "missing" ? (row as any).webRow as Record<string, string> : null;
   const sigaRow = row.type !== "extra" ? (row as any).sigaRow as Record<string, string> : null;
+
+  const suggestions = loadSuggestions();
+  const suggested = suggestions[row.key] ?? null;
 
   const title = webRow?.[mapping.webDesc ?? ""] ?? sigaRow?.[mapping.sigaDesc ?? ""] ?? row.key;
   const status = (webRow?.["post_status"] ?? "").toLowerCase();
@@ -97,9 +105,28 @@ function ProductModal({ data, mapping, onClose }: { data: ModalData; mapping: Co
             ) : null)}
           </div>
 
-          {/* Descripciones */}
-          <CopyBlock label="Descripción corta (post_excerpt)" value={excerpt} placeholder="Sin descripción corta" />
-          <CopyBlock label="Descripción completa (post_content)" value={content} placeholder="Sin descripción completa" />
+          {/* Descripciones actuales en web */}
+          <div>
+            <p className="text-[11px] font-semibold text-white/30 uppercase tracking-widest mb-2">Estado actual en web</p>
+            <CopyBlock label="Descripción corta (post_excerpt)" value={excerpt} placeholder="Sin descripción corta en web" />
+            <div className="mt-3">
+              <CopyBlock label="Descripción completa (post_content)" value={content} placeholder="Sin descripción completa en web" />
+            </div>
+          </div>
+
+          {/* Descripciones sugeridas */}
+          {suggested && (
+            <div className="border-t border-white/10 pt-4">
+              <p className="text-[11px] font-semibold text-purple-400/70 uppercase tracking-widest mb-2">Descripciones sugeridas (para copiar a WooCommerce)</p>
+              <CopyBlock label="Descripción corta sugerida" value={suggested.excerpt} placeholder="Sin sugerencia" />
+              <div className="mt-3">
+                <CopyBlock label="Descripción completa sugerida" value={suggested.content} placeholder="Sin sugerencia" />
+              </div>
+            </div>
+          )}
+          {!suggested && !excerpt && !content && (
+            <p className="text-xs text-white/30 italic text-center py-2">Cargá el CSV de descripciones sugeridas en el paso 1 para ver las generadas aquí</p>
+          )}
         </div>
       </div>
     </div>

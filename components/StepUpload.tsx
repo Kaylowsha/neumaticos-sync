@@ -30,15 +30,17 @@ function mergeWebEntries(entries: WebEntry[]): ParsedFile {
 }
 
 export default function StepUpload({ onDone }: Props) {
-  const [sigaFile, setSigaFile]   = useState<ParsedFile | null>(null);
+  const [sigaFile, setSigaFile]     = useState<ParsedFile | null>(null);
   const [webEntries, setWebEntries] = useState<WebEntry[]>([]);
-  const [error, setError]         = useState("");
-  const [loading, setLoading]     = useState(false);
+  const [error, setError]           = useState("");
+  const [loading, setLoading]       = useState(false);
   const [showEditor, setShowEditor] = useState(false);
-  const [dbLoading, setDbLoading] = useState(true);
+  const [dbLoading, setDbLoading]   = useState(true);
+  const [suggestionsFile, setSuggestionsFile] = useState<string | null>(null);
 
-  const sigaRef = useRef<HTMLInputElement>(null);
-  const webRef  = useRef<HTMLInputElement>(null);
+  const sigaRef  = useRef<HTMLInputElement>(null);
+  const webRef   = useRef<HTMLInputElement>(null);
+  const suggRef  = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchInventory().then((inv) => {
@@ -109,10 +111,32 @@ export default function StepUpload({ onDone }: Props) {
     setTimeout(() => sigaRef.current?.click(), 50);
   }
 
+  async function handleSuggestionsFile(file: File) {
+    setLoading(true);
+    try {
+      const parsed = await parseFile(file);
+      // guardar lookup {sku → {excerpt, content}} en localStorage
+      const lookup: Record<string, { excerpt: string; content: string }> = {};
+      for (const row of parsed.rows) {
+        const sku = (row["sku"] ?? row["SKU"] ?? "").trim();
+        if (!sku) continue;
+        lookup[sku] = {
+          excerpt: (row["post_excerpt"] ?? "").trim(),
+          content: (row["post_content"] ?? "").replace(/<[^>]+>|&nbsp;/g, " ").replace(/\s+/g, " ").trim(),
+        };
+      }
+      localStorage.setItem("desc-suggestions", JSON.stringify(lookup));
+      setSuggestionsFile(file.name);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error al leer archivo de descripciones");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleContinue() {
     if (!sigaFile || webEntries.length === 0) return;
-    const merged = webEntries.length === 1 ? mergeWebEntries(webEntries) : mergeWebEntries(webEntries);
-    onDone(sigaFile, merged);
+    onDone(sigaFile, mergeWebEntries(webEntries));
   }
 
   if (dbLoading) {
@@ -234,6 +258,32 @@ export default function StepUpload({ onDone }: Props) {
               </p>
             )}
           </div>
+        </div>
+
+        {/* Descripciones sugeridas — opcional */}
+        <div className="border border-white/10 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white/60">Descripciones sugeridas <span className="text-white/30 font-normal">(opcional)</span></p>
+              <p className="text-xs text-white/30 mt-0.5">CSV con las descripciones generadas para copiar al modal</p>
+            </div>
+            {suggestionsFile ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-green-400 font-mono">✓ {suggestionsFile}</span>
+                <button onClick={() => { localStorage.removeItem("desc-suggestions"); setSuggestionsFile(null); }}
+                  className="text-white/30 hover:text-red-400 text-sm transition">✕</button>
+              </div>
+            ) : (
+              <button
+                onClick={() => suggRef.current?.click()}
+                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/60 text-xs transition"
+              >
+                Cargar CSV
+              </button>
+            )}
+          </div>
+          <input ref={suggRef} type="file" accept=".csv" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSuggestionsFile(f); e.target.value = ""; }} />
         </div>
 
         {error && (
