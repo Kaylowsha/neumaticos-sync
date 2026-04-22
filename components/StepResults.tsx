@@ -140,6 +140,18 @@ function loadDifsCorrections(): Record<string, string[]> {
   catch { return {}; }
 }
 
+function loadReadyKeys(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem("ready-keys") ?? "[]")); }
+  catch { return new Set(); }
+}
+
+function descCount(webRow: Record<string, string> | null): 0 | 1 | 2 {
+  if (!webRow) return 0;
+  const exc = (webRow["post_excerpt"] ?? "").trim();
+  const con = (webRow["post_content"] ?? "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, "").trim();
+  return (exc ? 1 : 0) + (con ? 1 : 0) as 0 | 1 | 2;
+}
+
 function uniqueSorted(vals: (string | undefined)[]): string[] {
   return [...new Set(vals.filter(Boolean) as string[])].sort((a, b) =>
     a.localeCompare(b, undefined, { numeric: true })
@@ -197,6 +209,17 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
   const [decisions, setDecisions]         = useState<Record<string, ExtraDecision>>(loadDecisions);
   const [difsCorrections, setDifsCorr]   = useState<Record<string, string[]>>(loadDifsCorrections);
   const [modalData, setModalData]         = useState<ModalData | null>(null);
+  const [readyKeys, setReadyKeys]         = useState<Set<string>>(loadReadyKeys);
+
+  function toggleReady(key: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    setReadyKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      localStorage.setItem("ready-keys", JSON.stringify([...next]));
+      return next;
+    });
+  }
 
   function setDecision(key: string, decision: ExtraDecision) {
     setDecisions((prev) => {
@@ -440,18 +463,49 @@ export default function StepResults({ result, mapping, onBack, onReset }: Props)
               const webRow = row.type !== "missing" ? (row as any).webRow as Record<string, string> : null;
               const excerpt = webRow?.["post_excerpt"]?.trim() ?? "";
               const content = (webRow?.["post_content"] ?? "").replace(/<[^>]+>|&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+              const dc = descCount(webRow);
+              const isReady = readyKeys.has(row.key) || dc === 2;
 
               return (
                 <>
                 <tr
                   key={i}
                   onClick={() => setModalData({ row, excerpt, content })}
-                  className={`border-b border-white/5 hover:bg-white/5 cursor-pointer ${isHandled ? "opacity-50" : ""}`}
+                  className={`border-b border-white/5 hover:bg-white/5 cursor-pointer ${(isHandled || isReady) ? "opacity-50" : ""}`}
                 >
                   <td className={`py-2 px-3 font-mono whitespace-nowrap ${skuColor}`}>{row.key}</td>
                   <td className="py-2 px-2" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${stCls}`}>{stLabel}</span>
+
+                      {/* Badge descripciones */}
+                      {webRow && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                          isReady
+                            ? "bg-green-900/30 text-green-400 border-green-500/30"
+                            : dc === 1
+                            ? "bg-yellow-900/30 text-yellow-400 border-yellow-500/30"
+                            : "bg-red-900/20 text-red-400/70 border-red-500/20"
+                        }`}>
+                          {isReady ? "✓ LISTO" : `${dc}/2`}
+                        </span>
+                      )}
+
+                      {/* Botón Listo manual (solo si no está auto-marcado) */}
+                      {webRow && !isReady && (
+                        <button
+                          onClick={(e) => toggleReady(row.key, e)}
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded border bg-green-900/10 text-green-400/50 border-green-500/20 hover:bg-green-900/30 hover:text-green-300 transition"
+                        >
+                          Listo
+                        </button>
+                      )}
+                      {webRow && readyKeys.has(row.key) && dc < 2 && (
+                        <button
+                          onClick={(e) => toggleReady(row.key, e)}
+                          className="text-[10px] px-1.5 py-0.5 rounded border bg-white/5 text-white/25 border-white/10 hover:text-white/50 transition"
+                        >↩</button>
+                      )}
 
                       {/* SOBRA: botones quitar/mantener */}
                       {row.type === "extra" && !decision && (
